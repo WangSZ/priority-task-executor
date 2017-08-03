@@ -79,7 +79,7 @@ public class PriorityTaskExecutorTest {
         PriorityTaskExecutor.MyFutureTask fu20 = r.addTask(s20);
         PriorityTaskExecutor.MyFutureTask fu10 = r.addTask(s10);
 
-        fu10.cancel(false);
+        r.cancelTask(fu10,false);
 
         try {
             Assert.assertNotNull(fu20.get());
@@ -95,6 +95,19 @@ public class PriorityTaskExecutorTest {
 
     }
 
+    @Test
+    public void testPrintQueue()  {
+
+        PriorityTaskExecutor r = PriorityTaskExecutor.getOrBuild(name);
+        r.resize(1);
+        PriorityTaskExecutor.MyFutureTask fu1 = r.addTask(new SleepTask("test", PriorityTaskExecutor.Task.NORMAL, 10000));
+        PriorityTaskExecutor.MyFutureTask fu2 = r.addTask(new SleepTask("test", PriorityTaskExecutor.Task.NORMAL, 10000));
+        Assert.assertTrue(r.printQueue().contains("QueueSize:1"));
+        r.cancelTask(fu1,false);
+        r.cancelTask(fu2,false);
+        Assert.assertTrue(r.printQueue().contains("QueueSize:0"));
+
+    }
 
     @Test
     public void testCounterTask()  {
@@ -181,6 +194,7 @@ public class PriorityTaskExecutorTest {
     }
 
 
+
     static class CounterTask extends PriorityTaskExecutor.Task<Object> {
 
         private AtomicLong counter;
@@ -194,9 +208,9 @@ public class PriorityTaskExecutorTest {
             return counter.incrementAndGet();
         }
     }
-//    public static void main(String[] args) throws ExecutionException, InterruptedException {
-//        test();
-//    }
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        test();
+    }
 
     public static class HkTask extends PriorityTaskExecutor.Task<Object> {
 

@@ -263,6 +263,12 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
         return ft;
     }
 
+
+    public boolean cancelTask(MyFutureTask<V,T > task, boolean mayInterruptIfRunning) {
+        queue.remove(task);
+        return task.cancel(mayInterruptIfRunning);
+    }
+
     public static class NotRunningException extends RuntimeException {
 
     }
@@ -282,9 +288,10 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
             this.task = task;
         }
 
+
         /*
-        按优先级和添加时间进行排序。优先级越高，进入队列越早的task优先执行
-         */
+                按优先级和添加时间进行排序。优先级越高，进入队列越早的task优先执行
+                 */
         @Override
         public int compareTo(MyFutureTask o) {
             return this.task.compareTo(o.task);
