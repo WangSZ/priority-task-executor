@@ -244,6 +244,7 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
     @Override
     public String printQueue() {
         MyFutureTask[] arr = queue.toArray(new MyFutureTask[0]);
+        Arrays.sort(arr);
         StringBuffer sb = new StringBuffer();
         sb.append("QueueSize:").append(arr.length).append("\n");
         for (int i = 0; i < arr.length; i++) {
