@@ -21,7 +21,7 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
     }
 
 
-    public final static ConcurrentHashMap<String, PriorityTaskExecutor> cache = new ConcurrentHashMap<>();
+    private final static ConcurrentHashMap<String, PriorityTaskExecutor> cache = new ConcurrentHashMap<>();
 
     public static PriorityTaskExecutor getOrBuild(String name, int size) {
         PriorityTaskExecutor r = cache.get(name);
