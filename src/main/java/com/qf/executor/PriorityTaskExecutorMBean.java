@@ -1,5 +1,7 @@
 package com.qf.executor;
 
+import com.google.common.util.concurrent.RateLimiter;
+
 /**
  * 版权：Copyright 2017 QuarkFinance IT
  * 描述：<描述>
@@ -30,4 +32,18 @@ public interface PriorityTaskExecutorMBean {
      */
     String printQueue();
 
+    /*
+    获取QPS
+     */
+    double getRateLimit();
+
+    /*
+    设置QPS
+     */
+    void resetRate(double permitsPerSecond);
+
+    /*
+    禁用QPS限制
+     */
+    void disableRateLimiter();
 }

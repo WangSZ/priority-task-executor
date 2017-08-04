@@ -154,6 +154,82 @@ public class PriorityTaskExecutorTest {
 
     }
 
+
+    @Test
+    public void testShutdownTaskCancel()  {
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name);
+        r.setDebug(true);
+        r.setStopExecutorTimeout(2000);//修改关闭超时为 100ms
+        r.resize(1);
+        PriorityTaskExecutor.MyFutureTask<Object,SleepTask> fu1 = r.addTask(new SleepTask("sleep", PriorityTaskExecutor.Task.NORMAL, 1000));
+        PriorityTaskExecutor.MyFutureTask<Object,SleepTask> fu2 = r.addTask(new SleepTask("sleep", PriorityTaskExecutor.Task.NORMAL, 1000));
+        r.shutdown();
+        fu2.cancel(false);
+        Exception ex=null;
+        try {
+            System.out.println(fu2.get());
+        } catch (Exception e) {
+            ex=e;
+        }
+        Assert.assertNotNull(ex);
+        Assert.assertEquals(ex.getClass(),CancellationException.class);
+
+    }
+
+
+    @Test
+    public void testRateSet()  {
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name);
+        double rate=1000;
+        Assert.assertFalse(r.isRateLimiterEnabled());
+        r.resetRate(rate);
+        Assert.assertEquals(rate,r.getRateLimit(),0.1);
+    }
+
+    @Test
+    public void testRateLimit1()  {
+        testRateLimit(1);
+    }
+
+    @Test
+    public void testRateLimit2()  {
+        testRateLimit(2);
+    }
+
+    @Test
+    public void testRateLimit3()  {
+        testRateLimit(3);
+    }
+
+    public void testRateLimit(int rate)  {
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name+"rate");
+        r.resetRate(rate);
+        r.resize(10);
+        int taskCount=100;
+        List< PriorityTaskExecutor.MyFutureTask<Object, SleepTask> > list=new ArrayList<>();
+        for (int i = 0; i < taskCount; i++) {
+            list.add(r.addTask(new SleepTask(200)));
+        }
+        try {
+            TimeUnit.MILLISECONDS.sleep(2);
+            Assert.assertTrue(r.getQueueSize()>0);
+        } catch (Exception e) {
+            Assert.assertNull(e);
+        }
+    }
+
+    @Test
+    public void testRateDisable()  {
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name);
+        double rate=1000;
+        r.resetRate(rate);
+        Assert.assertEquals(rate,r.getRateLimit(),0.1);
+        Assert.assertTrue(r.isRateLimiterEnabled());
+        r.disableRateLimiter();
+        Assert.assertFalse(r.isRateLimiterEnabled());
+        Assert.assertEquals(r.getRateLimit(),0,0.1);
+    }
+
     static class ReturnNameTask extends PriorityTaskExecutor.Task<String>{
 
         public ReturnNameTask(String name, int priority) {
@@ -168,6 +244,10 @@ public class PriorityTaskExecutorTest {
 
     static class SleepTask extends PriorityTaskExecutor.Task<Object> {
 
+        public SleepTask(int sleep) {
+            super("sleep", PriorityTaskExecutor.Task.NORMAL);
+            this.sleep=sleep;
+        }
         public SleepTask(String name, int priority,int sleep) {
             super(name, priority);
             this.sleep=sleep;
@@ -186,9 +266,7 @@ public class PriorityTaskExecutorTest {
                 Thread.sleep(sleep);
             } catch (InterruptedException e) {
                 e.printStackTrace();
-            }
-            System.out.println("SleepTask " + getName() + " "+sleep+ " DONE");
-            this.threadName=Thread.currentThread().toString();
+            }this.threadName=Thread.currentThread().toString();
             return getName()+sleep;
         }
     }
@@ -208,60 +286,5 @@ public class PriorityTaskExecutorTest {
             return counter.incrementAndGet();
         }
     }
-    public static void main(String[] args) throws ExecutionException, InterruptedException {
-        test();
-    }
 
-    public static class HkTask extends PriorityTaskExecutor.Task<Object> {
-
-        public HkTask(String name, int priority) {
-            super(name, priority);
-        }
-
-        @Override
-        public Object call() {
-            try {
-                System.out.println("HkTask " + getName() + " DONE");
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            return new Date().toString();
-        }
-    }
-
-    public static void test()throws ExecutionException, InterruptedException{
-
-        new Thread() {
-            @Override
-            public void run() {
-                int j = 0;
-                while (true) {
-                    try {
-                        TimeUnit.MILLISECONDS.sleep(10);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    PriorityTaskExecutor r = PriorityTaskExecutor.getOrBuild(name, 2);
-                    r.addTask(new HkTask("p-" + j++, PriorityTaskExecutor.Task.NORMAL));
-                }
-            }
-        }.start();
-        new Thread() {
-            @Override
-            public void run() {
-                int j = 0;
-                while (true) {
-                    try {
-                        TimeUnit.MILLISECONDS.sleep(10);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    PriorityTaskExecutor r = PriorityTaskExecutor.getOrBuild(name, 2);
-                    r.addTask(new HkTask("pt-" + j++, PriorityTaskExecutor.Task.HIGH));
-                }
-            }
-        }.start();
-        TimeUnit.DAYS.sleep(2);
-    }
 }

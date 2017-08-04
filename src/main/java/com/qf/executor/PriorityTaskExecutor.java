@@ -1,11 +1,14 @@
 package com.qf.executor;
 
+import com.google.common.util.concurrent.RateLimiter;
+
 import javax.management.*;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 版权：Copyright 2017 QuarkFinance IT
@@ -26,7 +29,7 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
     public static PriorityTaskExecutor getOrBuild(String name, int size) {
         PriorityTaskExecutor r = cache.get(name);
         if (r == null) {
-            synchronized (cache) {
+            synchronized (cache) {;
                 if (!cache.containsKey(name)) {
                     cache.put(name, build(name, size));
                 }
@@ -84,15 +87,57 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
 
     private ExecutorService executor;
     private ReentrantLock mainLock = new ReentrantLock();
+    private ReentrantReadWriteLock rateLimiterLock = new ReentrantReadWriteLock();
     private volatile int status = 0;
+
+    public boolean isRateLimiterEnabled() {
+        return rateLimiterEnabled&&rateLimiter!=null;
+    }
+
+    private volatile boolean rateLimiterEnabled = false;
+    private RateLimiter rateLimiter;
 
     public static final int SHUTDOWN = 0;
     public static final int RUNNING = 1;
     public static final int RESIZING = 2;
 
+
     public void setDebug(boolean debug) {
         this.debug = debug;
     }
+
+    public final double getRateLimit(){
+        if(!isRateLimiterEnabled()){
+            return 0;
+        }
+        return rateLimiter.getRate();
+    }
+
+    @Override
+    public final void resetRate(double permitsPerSecond) {
+        rateLimiterLock.writeLock().lock();
+        try{
+            if(rateLimiter==null){
+                rateLimiter=RateLimiter.create(permitsPerSecond);
+            }else{
+                rateLimiter.setRate(permitsPerSecond);
+            }
+            rateLimiterEnabled=true;
+        }finally {
+            rateLimiterLock.writeLock().unlock();
+        }
+    }
+
+    public void disableRateLimiter(){
+        rateLimiterLock.writeLock().lock();
+        try{
+            rateLimiterEnabled=false;
+            rateLimiter=null;
+        }finally {
+            rateLimiterLock.writeLock().unlock();
+        }
+    }
+
 
 
     public boolean isDebug() {
@@ -135,7 +180,7 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
         this.unregisterMBean();
         MyFutureTask<V,T> task = null;
         while (null != (task = queue.poll())) {//关闭后打印未完成的任务
-            task.cancel(true);
+            task.cancel(false);
             System.err.println(String.format("Task [%s] NOT done.", task.getRealTask()));
         }
     }
@@ -188,6 +233,14 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
                     @Override
                     public void run() {
                         while (!executor.isShutdown()) {
+                            rateLimiterLock.readLock().lock();
+                            try{
+                                if(isRateLimiterEnabled()){
+                                    rateLimiter.acquire();
+                                }
+                            }finally {
+                                rateLimiterLock.readLock().unlock();
+                            }
                             try {
                                 MyFutureTask<V,T> task = queue.poll(1, TimeUnit.SECONDS);
                                 if (task != null) {
