@@ -6,7 +6,6 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -38,12 +37,23 @@ public class PriorityTaskExecutorTest {
      */
     @Test
     public void testInstanceEqual(){
-
+        Assert.assertEquals(PriorityTaskExecutor.getOrBuild(name, 2).getName(),name);
         Assert.assertEquals(PriorityTaskExecutor.getOrBuild(name, 2),PriorityTaskExecutor.getOrBuild(name, 2));
         Assert.assertEquals(PriorityTaskExecutor.getOrBuild(name, 2),PriorityTaskExecutor.getOrBuild(name, 2));
         Assert.assertEquals(PriorityTaskExecutor.getOrBuild(name, 2),PriorityTaskExecutor.getOrBuild(name, 2));
     }
 
+    @Test(expected=PriorityTaskExecutor.Task.WrongPriorityException.class)
+    public void testWrongPriorityException(){
+        new ReturnNameTask("name",1000);
+    }
+
+    @Test(expected =  PriorityTaskExecutor.NotRunningException.class)
+    public void testNotRunningException(){
+        PriorityTaskExecutor r = PriorityTaskExecutor.getOrBuild(name, 2);
+        r.shutdown();
+        r.addTask(new SleepTask(2));
+    }
 
     /*
     PriorityTaskExecutor关闭后重新获取，应该生成新的对象
@@ -102,7 +112,13 @@ public class PriorityTaskExecutorTest {
         r.resize(1);
         PriorityTaskExecutor.MyFutureTask fu1 = r.addTask(new SleepTask("test", PriorityTaskExecutor.Task.NORMAL, 10000));
         PriorityTaskExecutor.MyFutureTask fu2 = r.addTask(new SleepTask("test", PriorityTaskExecutor.Task.NORMAL, 10000));
-        Assert.assertTrue(r.printQueue().contains("QueueSize:1"));
+        try {
+            Thread.sleep(10);
+        } catch (InterruptedException e) {
+            // Ignore
+        }
+        String str = r.printQueue();
+        Assert.assertTrue(str,str.contains("QueueSize:1"));
         r.cancelTask(fu1,false);
         r.cancelTask(fu2,false);
         Assert.assertTrue(r.printQueue().contains("QueueSize:0"));
@@ -132,7 +148,76 @@ public class PriorityTaskExecutorTest {
 
     }
 
+    @Test
+    public void testResize()  {
+        int size=3;
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name,2);
+        try {
+            r.addTask(new SleepTask(3)).get();
+        } catch (Exception e) {
+            Assert.assertNull(e);
+        }
+        Assert.assertEquals(r.getCount(),1);
+        Assert.assertEquals(r.getThreadPoolSize(),2);
+        r.resize(size);
+        r.resize(size);
+        Assert.assertEquals(r.getThreadPoolSize(),size);
 
+    }
+
+    private PriorityTaskExecutor.MyFutureTask sleepAndAddNewSleepTask(PriorityTaskExecutor r, int sleep){
+        try {
+            Thread.sleep(2);
+        } catch (InterruptedException e) {
+            //Ignore
+        }
+        return r.addTask(new SleepTask(sleep));
+    }
+    @Test
+    public void testTaskPriority(){
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name);
+        r.resize(1);
+        for (int i = 0; i < 10; i++) {
+            sleepAndAddNewSleepTask(r,100);
+        }
+        PriorityTaskExecutor.MyFutureTask<Object, SleepTask> fu2 = sleepAndAddNewSleepTask(r,100);
+        PriorityTaskExecutor.MyFutureTask<Object, SleepTask> fu3 = sleepAndAddNewSleepTask(r,100);
+        fu3.getRealTask().setPriority(PriorityTaskExecutor.Task.HIGH);
+        try {
+            TimeUnit.MILLISECONDS.sleep(200);//等待fu3执行完
+            r.shutdown();
+        } catch (Exception e) {
+            Assert.assertNull(e);
+        }
+        Exception ex=null;
+        try {
+            fu2.get();
+        } catch (Exception e) {
+            ex=e;
+        }
+        Assert.assertEquals(ex.getClass(),CancellationException.class);
+        Assert.assertEquals(fu2.isCancelled(),true);
+
+        try {
+            Assert.assertNotNull(fu3.get());
+        } catch (Exception e) {
+            Assert.assertNull(e);
+        }
+
+        Assert.assertEquals(fu3.getRealTask().getPriority(), PriorityTaskExecutor.Task.HIGH);
+        Assert.assertNotNull(fu3.getRealTask().getCreateTime());
+    }
+
+    @Test
+    public void testShutdown2()  {
+
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name);
+        r.shutdown();
+        Assert.assertEquals(r.getQueueSize(),0);
+        Assert.assertTrue(r.isShutdown());
+        r.shutdown();
+        Assert.assertTrue(r.isShutdown());
+    }
 
     @Test
     public void testShutdownTimeout()  {
@@ -199,6 +284,18 @@ public class PriorityTaskExecutorTest {
     @Test
     public void testRateLimit3()  {
         testRateLimit(3);
+    }
+
+
+    @Test
+    public void testRateReset()  {
+        double rate=2;
+        PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name+"rate");
+        r.resetRate(rate);
+        Assert.assertEquals(rate,r.getRateLimit(),0.1);
+        double newRate=3;
+        r.resetRate(newRate);
+        Assert.assertEquals(newRate,r.getRateLimit(),0.1);
     }
 
     public void testRateLimit(int rate)  {

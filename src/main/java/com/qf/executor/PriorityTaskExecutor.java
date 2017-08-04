@@ -158,7 +158,9 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
         }
     }
 
-
+    public boolean isShutdown(){
+        return status==SHUTDOWN;
+    }
     public void shutdown() {
         mainLock.lock();
         try {
@@ -354,7 +356,7 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
 
     public static abstract class Task<V> implements Callable<V>, Comparable<Task> {
 
-        private static class WrongPriorityException extends RuntimeException {
+        public static class WrongPriorityException extends RuntimeException {
             WrongPriorityException(String message) {
                 super(message);
             }
