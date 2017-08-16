@@ -288,6 +288,27 @@ public class PriorityTaskExecutorTest {
 
 
     @Test
+    public void testRunTimeException()  {
+
+        PriorityTaskExecutor<Object,ExceptionTask> r = PriorityTaskExecutor.getOrBuild(name);
+        PriorityTaskExecutor.MyFutureTask<Object, ExceptionTask> fu = r.addTask(new ExceptionTask());
+        Exception ex=null;
+        try {
+            try {
+                fu.get();
+            } catch (InterruptedException e) {
+                Assert.assertNull(e);
+            }
+        } catch (ExecutionException e) {
+            ex=e;
+        }
+        Assert.assertNotNull(ex);
+        Assert.assertEquals(ex.getCause().getClass(),RuntimeException.class);
+        Assert.assertEquals(ex.getCause().getMessage(),ExceptionTask.class.getName());
+    }
+
+
+    @Test
     public void testRateReset()  {
         double rate=2;
         PriorityTaskExecutor<Object,SleepTask> r = PriorityTaskExecutor.getOrBuild(name+"rate");
@@ -384,4 +405,17 @@ public class PriorityTaskExecutorTest {
         }
     }
 
+
+
+    static class ExceptionTask extends PriorityTaskExecutor.Task<Object> {
+
+        public ExceptionTask() {
+            super(ExceptionTask.class.getName(), PriorityTaskExecutor.Task.NORMAL);
+        }
+
+        @Override
+        public Object call() {
+            throw new RuntimeException(ExceptionTask.class.getName());
+        }
+    }
 }

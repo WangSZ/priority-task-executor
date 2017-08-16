@@ -235,15 +235,19 @@ public class PriorityTaskExecutor<V,T  extends PriorityTaskExecutor.Task<V>> imp
                     @Override
                     public void run() {
                         while (!executor.isShutdown()) {
+                            RateLimiter rateLimiterInner=null;
                             rateLimiterLock.readLock().lock();
                             try{
                                 if(isRateLimiterEnabled()){
-                                    rateLimiter.acquire();
+                                    rateLimiterInner=rateLimiter;
                                 }
                             }finally {
                                 rateLimiterLock.readLock().unlock();
                             }
                             try {
+                                if(null!=rateLimiterInner){
+                                    rateLimiterInner.acquire();
+                                }
                                 MyFutureTask<V,T> task = queue.poll(1, TimeUnit.SECONDS);
                                 if (task != null) {
                                     long c = count.incrementAndGet();
