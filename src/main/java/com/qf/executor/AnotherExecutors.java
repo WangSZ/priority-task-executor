@@ -240,6 +240,9 @@ public class AnotherExecutors {
         @Override
         protected <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
             if (this.getQueue() instanceof PriorityBlockingQueue) {
+                if (runnable instanceof Task) {
+                    return new MyFutureTask<>((Task) runnable);
+                }
                 if (runnable instanceof Comparable) {
                     return new MyFutureTask<>(new RunnableAdapterTask<>(runnable, value));
                 }
@@ -323,7 +326,7 @@ public class AnotherExecutors {
 
         private T task;
 
-        public MyFutureTask(T task) {
+        private MyFutureTask(T task) {
             super(task);
             this.task = task;
         }
@@ -338,7 +341,7 @@ public class AnotherExecutors {
         }
     }
 
-    static class CallableAdapterTask<V> extends Task {
+    private static class CallableAdapterTask<V> extends Task {
         private Callable<V> callable;
 
         public CallableAdapterTask(Callable<V> callable) {
@@ -360,7 +363,7 @@ public class AnotherExecutors {
         }
     }
 
-    static class RunnableAdapterTask<V> extends Task {
+    private static class RunnableAdapterTask<V> extends Task {
         final Runnable runnable;
         final V result;
 
