@@ -12,9 +12,7 @@ import java.util.concurrent.ExecutorService;
  */
 public class AnotherExecutorsTest {
     public static void main(String[] args) {
-        ExecutorService exec = AnotherExecutors.newFixedThreadPool(null,10);
-//        exec.shutdownNow();
-        exec= AnotherExecutors.newFixedThreadPool("xxx",10);
+        ExecutorService exec = AnotherExecutors.newCachedThreadPool("abc");
         while (true) {
             try {
                 Thread.currentThread().sleep(10);

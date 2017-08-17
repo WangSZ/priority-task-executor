@@ -101,6 +101,8 @@ public class AnotherExecutors {
         public void setMaximumPoolSize(int maximumPoolSize);
         public void setKeepAliveTime(long time);
         public long getKeepAliveTime();
+        public boolean isPaused();
+        public String getQueueClassName();
     }
 
     public static class ThreadPoolStatus implements ThreadPoolStatusMBean {
@@ -173,6 +175,16 @@ public class AnotherExecutors {
         @Override
         public void pause() {
             pool.pause();
+        }
+        @Override
+        public boolean isPaused() {
+
+            return pool.isPaused;
+        }
+
+        @Override
+        public String getQueueClassName(){
+            return  pool.getQueue().getClass().toString();
         }
 
         private String[] toStringArray(Collection<Runnable> collection) {
@@ -266,8 +278,6 @@ public class AnotherExecutors {
         @Override
         protected void beforeExecute(Thread t, Runnable r) {
             super.beforeExecute(t, r);
-            inProgress.put(r, Boolean.TRUE);
-            startTime.set(new Long(System.currentTimeMillis()));
             pauseLock.readLock().lock();
             try {
                 if (isPaused) {//如果暂停，则升级到写锁再等待
@@ -287,6 +297,8 @@ public class AnotherExecutors {
             } finally {
                 pauseLock.readLock().unlock();
             }
+            inProgress.put(r, Boolean.TRUE);
+            startTime.set(new Long(System.currentTimeMillis()));
         }
 
         public void pause() {
