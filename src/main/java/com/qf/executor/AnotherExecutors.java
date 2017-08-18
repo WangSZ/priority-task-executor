@@ -55,6 +55,17 @@ public class AnotherExecutors {
     }
 
     /*
+    替换Executors.newFixedThreadPool。队列大小受限。当超出能力时，异步转同步调用
+     */
+    public static ExecutorService newFixedThreadPoolWithQueueSize(String name,int nThreads,int queueSize) {
+        TrackingThreadPool pool = registerMBean(new TrackingThreadPool(name, nThreads, nThreads,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<Runnable>(queueSize)));
+        pool.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        return pool;
+    }
+
+    /*
     在Executors.newFixedThreadPool基础上添加优先级队列
      */
     public static ExecutorService newFixedThreadPoolWithPriorityQueue(String name,int nThreads) {
@@ -147,6 +158,7 @@ public class AnotherExecutors {
 
         @Override
         public void setCorePoolSize(int corePoolSize){
+            checkSetCorePoolSize();
             pool.setCorePoolSize(corePoolSize);
         }
 
@@ -156,13 +168,32 @@ public class AnotherExecutors {
         }
         @Override
         public void setMaximumPoolSize(int maximumPoolSize) {
+            checkSetMaximumPoolSize();
             pool.setMaximumPoolSize(maximumPoolSize);
         }
 
         @Override
         public void setKeepAliveTime(long time){
+            checkSetKeepAliveTime();
             pool.setKeepAliveTime(time, TimeUnit.MILLISECONDS);
         }
+
+        private void checkSetKeepAliveTime() {
+            if(pool.getQueue() instanceof  SynchronousQueue){
+                throw  new UnsupportedOperationException();
+            }
+        }
+        private void checkSetCorePoolSize() {
+            if(pool.getQueue() instanceof  SynchronousQueue){
+                throw  new UnsupportedOperationException();
+            }
+        }
+        private void checkSetMaximumPoolSize(){
+            if(pool.getQueue() instanceof  SynchronousQueue){
+                throw  new UnsupportedOperationException();
+            }
+        }
+
         @Override
         public long getKeepAliveTime(){
             return pool.getKeepAliveTime( TimeUnit.MILLISECONDS);
