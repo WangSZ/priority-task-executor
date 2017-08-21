@@ -22,8 +22,12 @@ public class AnotherExecutorsTest {
             exec.execute(new Runnable() {
                 @Override
                 public void run() {
+                    int l=new Random().nextInt(1000);
                     try {
-                        Thread.currentThread().sleep(new Random().nextInt(1000));
+                        Thread.currentThread().sleep(l);
+                        if(l>800){
+                            throw new RuntimeException("耗时大于800ms => "+l);
+                        }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }

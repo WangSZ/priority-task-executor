@@ -6,6 +6,7 @@ import javax.management.ObjectName;
 import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -44,23 +45,26 @@ public class AnotherExecutors {
         }
         return pool;
     }
-
+    public static TrackingThreadPool setFactory(TrackingThreadPool pool){
+        pool.setThreadFactory(new TrackingThreadFactory(pool.getName()));
+        return pool;
+    }
     /*
     替换Executors.newFixedThreadPool
      */
     public static ExecutorService newFixedThreadPool(String name,int nThreads) {
-        return registerMBean(new TrackingThreadPool(name,nThreads, nThreads,
+        return registerMBean(setFactory(new TrackingThreadPool(name,nThreads, nThreads,
                 0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<Runnable>()));
+                new LinkedBlockingQueue<Runnable>())));
     }
 
     /*
     替换Executors.newFixedThreadPool。队列大小受限。当超出能力时，异步转同步调用
      */
     public static ExecutorService newFixedThreadPoolWithQueueSize(String name,int nThreads,int queueSize) {
-        TrackingThreadPool pool = registerMBean(new TrackingThreadPool(name, nThreads, nThreads,
+        TrackingThreadPool pool = registerMBean(setFactory(new TrackingThreadPool(name, nThreads, nThreads,
                 0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<Runnable>(queueSize)));
+                new ArrayBlockingQueue<Runnable>(queueSize))));
         pool.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         return pool;
     }
@@ -69,9 +73,9 @@ public class AnotherExecutors {
     在Executors.newFixedThreadPool基础上添加优先级队列
      */
     public static ExecutorService newFixedThreadPoolWithPriorityQueue(String name,int nThreads) {
-        return registerMBean(new TrackingThreadPool(name,nThreads, nThreads,
+        return registerMBean(setFactory(new TrackingThreadPool(name,nThreads, nThreads,
                 0L, TimeUnit.MILLISECONDS,
-                new PriorityBlockingQueue<Runnable>(11)));
+                new PriorityBlockingQueue<Runnable>(11))));
     }
 
     /*
@@ -79,9 +83,9 @@ public class AnotherExecutors {
     预估可能造成大量积压的话，可以考虑设置合适的maximumPoolSize，来防止创建大量线程最后导致雪崩。
      */
     public static ExecutorService newCachedThreadPool(String name,int maximumPoolSize) {
-        return registerMBean(new TrackingThreadPool(name,0, maximumPoolSize,
+        return registerMBean(setFactory(new TrackingThreadPool(name,0, maximumPoolSize,
                 60L, TimeUnit.SECONDS,
-                new SynchronousQueue<Runnable>()));
+                new SynchronousQueue<Runnable>())));
     }
 
     public static ExecutorService newCachedThreadPool(String name) {
@@ -114,6 +118,7 @@ public class AnotherExecutors {
         public long getKeepAliveTime();
         public boolean isPaused();
         public String getQueueClassName();
+        public String[] getErrors();
     }
 
     public static class ThreadPoolStatus implements ThreadPoolStatusMBean {
@@ -200,6 +205,28 @@ public class AnotherExecutors {
         }
 
         @Override
+        public String[] getErrors (){
+            ArrayList<Map.Entry<String, AtomicLong>> entries=new ArrayList<>( pool.getErrorCountMap().entrySet());
+            Map.Entry<String, AtomicLong>[] entriesArray = entries.toArray(new Map.Entry[0]);
+            Arrays.sort(entriesArray, new Comparator<Map.Entry<String, AtomicLong>>() {
+                @Override
+                public int compare(Map.Entry<String, AtomicLong> a, Map.Entry<String, AtomicLong> b) {
+                    if( a.getValue().longValue()>b.getValue().longValue()){
+                        return -1;
+                    }else if( a.getValue().longValue()<b.getValue().longValue()){
+                        return 1;
+                    }
+                    return a.getKey().compareTo(b.getKey());
+                }
+            });
+            String[] arr=new String[entriesArray.length];
+            for (int i = 0; i < arr.length; i++) {
+                arr[i]=entriesArray[i].toString();
+            }
+            return arr;
+        }
+
+        @Override
         public int getMaximumPoolSize(){
             return pool.getMaximumPoolSize();
         }
@@ -230,7 +257,30 @@ public class AnotherExecutors {
             return list.toArray(new String[0]);
         }
     }
+    private static class TrackingThreadFactory implements ThreadFactory {
+        private final ThreadGroup group;
+        private final AtomicInteger threadNumber = new AtomicInteger(1);
+        private final String namePrefix;
 
+        TrackingThreadFactory(String name) {
+            SecurityManager var1 = System.getSecurityManager();
+            this.group = var1 != null ? var1.getThreadGroup() : Thread.currentThread().getThreadGroup();
+            this.namePrefix = name+"-thread-";
+        }
+
+        public Thread newThread(Runnable var1) {
+            Thread var2 = new Thread(this.group, var1, this.namePrefix + this.threadNumber.getAndIncrement(), 0L);
+            if (var2.isDaemon()) {
+                var2.setDaemon(false);
+            }
+
+            if (var2.getPriority() != 5) {
+                var2.setPriority(5);
+            }
+
+            return var2;
+        }
+    }
     private final static class TrackingThreadPool extends ThreadPoolExecutor {
 
         private final static AtomicLong cc=new AtomicLong();
@@ -251,6 +301,12 @@ public class AnotherExecutors {
         private String name;
 
         private final ConcurrentHashMap<Runnable, Boolean> inProgress = new ConcurrentHashMap<Runnable, Boolean>();
+
+        public ConcurrentHashMap<String, AtomicLong> getErrorCountMap() {
+            return errorCountMap;
+        }
+
+        private final ConcurrentHashMap<String,AtomicLong> errorCountMap=new ConcurrentHashMap<>();
         private final ThreadLocal<Long> startTime = new ThreadLocal<Long>();
         private AtomicLong totalTime = new AtomicLong();
         private AtomicLong totalTasks = new AtomicLong();
@@ -293,6 +349,20 @@ public class AnotherExecutors {
             return super.newTaskFor(runnable, value);
         }
 
+        private AtomicLong getErrorCounter(String name){
+            AtomicLong c=errorCountMap.get(name);
+            if(c==null){
+                synchronized (errorCountMap){
+                    if(errorCountMap.containsKey(name)){
+                        c=errorCountMap.get(name);
+                    }else {
+                        c = errorCountMap.put(name, new AtomicLong(0));
+                    }
+                }
+            }
+            return c;
+        }
+
         private boolean isPaused;
         private ReentrantReadWriteLock pauseLock = new ReentrantReadWriteLock();
         private Condition unpaused = pauseLock.writeLock().newCondition();
@@ -303,6 +373,19 @@ public class AnotherExecutors {
             totalTime.addAndGet(time);
             totalTasks.incrementAndGet();
             inProgress.remove(r);
+            if(t!=null){
+                String msg=t.getMessage();
+                if(msg==null){
+                    msg=t.getLocalizedMessage();
+                }
+                if(msg==null){
+                    msg=t.toString();
+                }
+                if(msg==null){
+                    msg=t.getClass().toString();
+                }
+                getErrorCounter(msg).incrementAndGet();
+            }
             super.afterExecute(r, t);
         }
 
